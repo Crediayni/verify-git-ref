@@ -1,0 +1,60 @@
+name: verify-git-ref
+
+description: An action that verifies a provided branch, tag or SHA exists in the repository
+
+inputs:
+  branch-tag-sha:
+    description: 'The branch, tag or sha that should be checked'
+    required: true
+  throw-errors:
+    description: 'Flag indicating whether the action should throw an error if the ref does not exist.  Defaults to true.  Accepted values: true|false'
+    required: true
+    default: 'true'
+
+outputs:
+  REF_EXISTS:
+    description: 'Flag indicating whether the provided reference exists.  true|false'
+    value: ${{ steps.determine-ref.outputs.REF_EXISTS }}
+  REF_TYPE:
+    description: 'String indicating the type of the provided reference: tag|branch|sha|unknown'
+    value: ${{ steps.determine-ref.outputs.REF_TYPE }}
+
+runs:
+  using: 'composite'
+  steps:
+    - id: determine-ref
+      shell: bash
+      run: |
+        echo "checking ref ${{ inputs.branch-tag-sha }}..."
+        ref="${{ inputs.branch-tag-sha }}"
+        refWithPrefix="refs/heads${{ inputs.branch-tag-sha }}"
+        
+        echo "REF_EXISTS=false" >> $GITHUB_OUTPUT
+        echo "REF_TYPE=unknown" >> $GITHUB_OUTPUT
+
+        if [ $(git tag -l "$ref") ]; then
+          echo "The ref '${ref}' exists as a tag"
+          echo "REF_EXISTS=true" >> $GITHUB_OUTPUT
+          echo "REF_TYPE=tag" >> $GITHUB_OUTPUT
+
+        elif [ "$(git show-ref -s "$ref")" ]; then
+          echo "The ref '${ref}' exists as a branch (no prefix was added to the input)"
+          echo "REF_EXISTS=true" >> $GITHUB_OUTPUT
+          echo "REF_TYPE=branch" >> $GITHUB_OUTPUT
+
+        elif [ "$(git show-ref -s "$refWithPrefix")" ]; then
+          echo "The ref '${refWithPrefix}' exists as a branch (the refs/heads/ prefix was added to the input)"
+          echo "REF_EXISTS=true" >> $GITHUB_OUTPUT
+          echo "REF_TYPE=branch" >> $GITHUB_OUTPUT
+
+        elif git cat-file -e $ref^{commit}; then
+          echo "The ref '${ref}' exists as a SHA"
+          echo "REF_EXISTS=true" >> $GITHUB_OUTPUT
+          echo "REF_TYPE=sha" >> $GITHUB_OUTPUT
+          
+        else
+          echo "The ref does not appear to exist"
+          if [ '${{ inputs.throw-errors }}' == 'true' ]; then
+            exit 1;
+          fi
+        fi
